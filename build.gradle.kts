@@ -7,10 +7,6 @@ group = "com.example"
 version = "0.1.0"
 val javaVersion = 25
 
-val appData = System.getenv("APPDATA") ?: (System.getenv("HOME") + "/.var/app/com.hypixel.HytaleLauncher/data")
-val hytaleAssets = file("$appData/Hytale/install/release/package/game/latest/Assets.zip")
-
-
 repositories {
     mavenCentral()
     maven("https://maven.hytale-modding.info/releases") {
@@ -21,13 +17,13 @@ repositories {
 dependencies {
     compileOnly(libs.jetbrains.annotations)
     compileOnly(libs.jspecify)
+}
 
-    if (hytaleAssets.exists()) {
-        compileOnly(files(hytaleAssets))
-    } else {
-        // Optional: Print a warning so you know why it's missing
-        logger.warn("Hytale Assets.zip not found at: ${hytaleAssets.absolutePath}")
-    }
+hytale {
+    // uncomment if you want to add the Assets.zip file to your external libraries;
+    // ⚠️ CAUTION, this file is very big and might make your IDE unresponsive for some time!
+    //
+    // addAssetsDependency = true
 }
 
 hytale {
@@ -69,10 +65,6 @@ tasks.named<ProcessResources>("processResources") {
     }
 
     inputs.properties(replaceProperties)
-}
-
-hytale {
-
 }
 
 tasks.withType<Jar> {
