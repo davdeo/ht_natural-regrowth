@@ -133,7 +133,8 @@
       "FrameIndex": {
         "Min": 0,
         "Max": 2
-      }
+      },
+      "Color": "#3ea149"
     }
   }
 }
