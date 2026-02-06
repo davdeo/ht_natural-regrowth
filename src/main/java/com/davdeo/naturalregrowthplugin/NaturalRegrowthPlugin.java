@@ -2,6 +2,7 @@ package com.davdeo.naturalregrowthplugin;
 
 import com.davdeo.naturalregrowthplugin.events.ExampleBreakBlockSystem;
 import com.hypixel.hytale.logger.HytaleLogger;
+import com.hypixel.hytale.server.core.modules.interaction.interaction.config.Interaction;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 
@@ -17,5 +18,6 @@ public class NaturalRegrowthPlugin extends JavaPlugin {
     protected void setup() {
         this.getCommandRegistry().registerCommand(new ExampleCommand(this.getName(), this.getManifest().getVersion().toString()));
         this.getEntityStoreRegistry().registerSystem(new ExampleBreakBlockSystem());
+        this.getCodecRegistry(Interaction.CODEC).register("my_custom_interaction_id", MyCustomInteraction.class, MyCustomInteraction.CODEC);
     }
 }
