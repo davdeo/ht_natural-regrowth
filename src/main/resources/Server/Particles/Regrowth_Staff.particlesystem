@@ -1,0 +1,28 @@
+{
+  "Spawners": [
+    {
+      "SpawnerId": "Regrowth_Staff_Mist",
+      "PositionOffset": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      }
+    },
+    {
+      "SpawnerId": "Regrowth_Staff_Leaves",
+      "PositionOffset": {
+        "X": -0.2,
+        "Y": 0,
+        "Z": 0
+      }
+    },
+    {
+      "SpawnerId": "Regrowth_Staff_Small_Bits",
+      "PositionOffset": {
+        "X": -0.2,
+        "Y": 0,
+        "Z": 0
+      }
+    }
+  ]
+}
