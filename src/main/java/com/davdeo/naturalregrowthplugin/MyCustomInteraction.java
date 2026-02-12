@@ -1,7 +1,6 @@
 package com.davdeo.naturalregrowthplugin;
 
 import com.hypixel.hytale.codec.builder.BuilderCodec;
-import com.hypixel.hytale.common.map.IWeightedMap;
 import com.hypixel.hytale.component.CommandBuffer;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
@@ -13,7 +12,7 @@ import com.hypixel.hytale.protocol.BlockPosition;
 import com.hypixel.hytale.protocol.InteractionState;
 import com.hypixel.hytale.protocol.InteractionType;
 import com.hypixel.hytale.server.core.Message;
-import com.hypixel.hytale.server.core.asset.type.blocktype.config.BlockType;
+import com.hypixel.hytale.server.core.asset.type.blocktype.config.*;
 import com.hypixel.hytale.server.core.entity.InteractionContext;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
@@ -29,10 +28,7 @@ import com.hypixel.hytale.server.worldgen.container.CoverContainer;
 import org.jspecify.annotations.NonNull;
 
 import javax.annotation.Nonnull;
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Random;
+import java.util.*;
 
 public class MyCustomInteraction extends SimpleInstantInteraction {
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
@@ -100,72 +96,59 @@ public class MyCustomInteraction extends SimpleInstantInteraction {
         int x = targetBlockPosVector.x;
         int z = targetBlockPosVector.z;
         int y = targetBlockPosVector.y;
-        ZoneBiomeResult result = generator.getZoneBiomeResultAt(seed, x, z);
 
-        LOGGER.atInfo().log("Targetblock: " + targetBlock.getId());
-        LOGGER.atInfo().log("Targetzone: " + result.getZoneResult().getZone().name());
-        Random random = new FastRandom(HashUtil.hash(seed, x, z, 5647422603192711886L));
+        // Currently this is a square of e.g. 21 x 21 blocks for a value of 10; x:[-10, 10] z:[-10, 10]
+        int scope = 10;
 
-        ArrayList<IWeightedMap<CoverContainer.CoverContainerEntry.CoverContainerEntryPart>> covers = new ArrayList<>(
-                Arrays.stream(result
-                    .getZoneResult()
-                    .getZone()
-                    .biomePatternGenerator()
-                    .getBiome(seed, x, z)
-                    .getCoverContainer()
-                    .getEntries()
-                ).map(coverContainerEntry -> {
+        for (int ix = -scope; ix <= scope; ix++) {
+            for (int iz = -scope; iz <= scope; iz++) {
+                BlockType groundBlock = world.getBlockType(x + ix, y, z + iz);
 
-                    // Evaluate if this is a one true others false situation
-                    // if true -> generate a block with .get(random) and set directly instead of getting all entries with the workaround
-                    LOGGER.atInfo().log("is matching position: " +
-                        isMatchingCoverColumn(seed, coverContainerEntry, random, x, z)
-                    );
-                    LOGGER.atInfo().log("is matching height: " +
-                            isMatchingCoverHeight(seed, coverContainerEntry, random, x, y, z)
-                    );
+                // Check if ground exists
+                if (groundBlock.getId().equals("Empty")) {
+                    continue;
+                }
 
-                    try {
-                        Field f = CoverContainer.CoverContainerEntry.class.getDeclaredField("entries");
-                        f.setAccessible(true);
-                        LOGGER.atInfo().log("CoverDensity: " + coverContainerEntry.getCoverDensity());
-                        LOGGER.atInfo().log("HeightCondition: " + coverContainerEntry.getHeightCondition());
-                        LOGGER.atInfo().log("MapCondition: " + coverContainerEntry.getMapCondition());
-                        LOGGER.atInfo().log("ParentCondition: " + coverContainerEntry.getParentCondition());
-                        return (IWeightedMap<CoverContainer.CoverContainerEntry.CoverContainerEntryPart>) f.get(coverContainerEntry);
-                    } catch (NoSuchFieldException | IllegalAccessException e) {
-                        throw new RuntimeException(e);
+                // Check if block above ground is free for cover
+                if (!world.getBlockType(x + ix, y + 1, z + iz).getId().equals("Empty")) {
+                    continue;
+                }
+
+                ZoneBiomeResult result = generator.getZoneBiomeResultAt(seed, x + ix, z + iz);
+                Random random = new FastRandom(HashUtil.hash(seed, x + ix, z + iz, world.getTick()));
+                int randomOffsetX = random.nextInt(5) - 2;
+                int randomOffsetZ = random.nextInt(5) - 2;
+                Optional<CoverContainer.CoverContainerEntry.CoverContainerEntryPart> coverContainerEntryPart = getCoverPart(result, seed, x + ix + randomOffsetX, y, z + iz + randomOffsetZ, random);
+
+                if (coverContainerEntryPart.isPresent()) {
+                    BlockType coverBlock = BlockType.getAssetMap().getAsset((coverContainerEntryPart.get().getEntry().blockId()));
+                    if (coverBlock == null) {
+                        continue;
                     }
-                }).toList()
-        );
 
-        LOGGER.atInfo().log("BlockIds: \n" +
-                covers
-                        .stream()
-                        .map(part -> part.toArray())
-                        .flatMap(Arrays::stream)
-                        .map(b -> ""
-                                        + "offset: " + b.getOffset()
-                                        + ", \t fluidId: " + b.getEntry().fluidId()
-                                        + ", \t rotation: " + b.getEntry().rotation()
-                                        + ", " + BlockType.getAssetMap().getAsset(b.getEntry().blockId()).getId()
+                    // There is a weird behavior where this would generate gravel and sand on bodies of water, like rivers. Also this has an offset of -1 so it replaces the water surface.
+                    if (coverBlock.getId().contains("Soil")) {
+                        LOGGER.atInfo().log("Skipping soil cover generation");
+                        continue;
+                    }
 
-                        )
-                        .reduce("", (a, b) -> a + ", \n" + b)
-        );
+                    // Skip special plants to prevent heavy exploitation
+                    if (
+                            coverBlock.getId().contains("Health") ||
+                            coverBlock.getId().contains("Mana") ||
+                            coverBlock.getId().contains("Stamina")
+                    ) {
+                        LOGGER.atInfo().log("Skipping special plant cover generation");
+                        continue;
+                    }
 
-        world.setBlock(targetBlockPos.x, targetBlockPos.y + 1, targetBlockPos.z,
-                BlockType.getAssetMap().getAsset((covers
-                    .stream()
-                    .map(part -> part.toArray())
-                    .flatMap(Arrays::stream)
-                        .toList().getFirst().getEntry().blockId()
-                )
-        ).getId());
-
-
-
-        LOGGER.atInfo().log("");
+                    if (isCoverPlaceableOnGround(groundBlock, coverBlock)) {
+                        LOGGER.atInfo().log("Set " + coverBlock.getId() + " to x:" + (x + ix) + " y:" + (y + 1 + coverContainerEntryPart.get().getOffset()) + " z:" + (z + iz) + " on top of " + groundBlock.getId());
+                        world.setBlock(x + ix, y + 1 + coverContainerEntryPart.get().getOffset(), z + iz, coverBlock.getId());
+                    }
+                }
+            }
+        }
     }
 
     private static boolean isMatchingCoverColumn(int seed, @Nonnull CoverContainer.CoverContainerEntry coverContainerEntry, @Nonnull Random random, int x, int z) {
@@ -175,4 +158,108 @@ public class MyCustomInteraction extends SimpleInstantInteraction {
     private static boolean isMatchingCoverHeight(int seed, @Nonnull CoverContainer.CoverContainerEntry coverContainerEntry, Random random, int x, int y, int z) {
         return coverContainerEntry.getHeightCondition().eval(seed, x, z, y, random);
     }
+
+    private static Optional<CoverContainer.CoverContainerEntry.CoverContainerEntryPart> getCoverPart(ZoneBiomeResult zoneBiomeResult, int seed, int x, int y, int z, Random random) {
+        Optional<CoverContainer.CoverContainerEntry> cce = Arrays.stream(Objects.requireNonNull(zoneBiomeResult
+                        .getZoneResult()
+                        .getZone()
+                        .biomePatternGenerator()
+                        .getBiome(seed, x, z))
+                .getCoverContainer()
+                .getEntries()
+        ).filter(coverContainerEntry ->
+                isMatchingCoverColumn(seed, coverContainerEntry, random, x, z) &&
+                        isMatchingCoverHeight(seed, coverContainerEntry, random, x, y, z)
+        ).findAny();
+
+        if (cce.isEmpty()) return Optional.empty();
+
+        CoverContainer.CoverContainerEntry.CoverContainerEntryPart ccep = cce.get().get(random);
+
+        if (ccep == null) return Optional.empty();
+
+        LOGGER.atInfo().log("Selected cover part " + BlockType.getAssetMap().getAsset(ccep.getEntry().blockId()).getId());
+        return Optional.of(ccep);
+    }
+
+    /**
+     * Limitation: Only matches coverBlock on top of groundBlock.
+     */
+    private static boolean isCoverPlaceableOnGround(@NonNull BlockType groundBlock, @NonNull BlockType coverBlock) {
+        var a_groundBFS = groundBlock.getSupporting(0).get(BlockFace.UP);
+        var a_coverRBFS_null =coverBlock.getSupport(0);
+
+        if (a_coverRBFS_null == null) {
+            return false;
+        }
+
+        var a_coverRBFS = a_coverRBFS_null.get(BlockFace.DOWN);
+
+        if (a_coverRBFS == null) {
+            LOGGER.atInfo().log("Cover block does not require support");
+            return true;
+        }
+
+        if (a_groundBFS == null) {
+            LOGGER.atInfo().log("Ground block does not provide any support");
+            return false;
+        }
+
+        for(var coverRBFS : a_coverRBFS) {
+            for( var groundBFS : a_groundBFS) {
+                if (matchBFSWithRBFS(groundBFS, coverRBFS, groundBlock, coverBlock)) {
+                    return true;
+                }
+            }
+        }
+
+        LOGGER.atWarning().log("No cover ground support match found");
+        LOGGER.atWarning().log("Cover supports: " + Arrays.stream(a_coverRBFS).map(RequiredBlockFaceSupport::toString).reduce("", (a, b) -> a + ", " + b));
+        LOGGER.atWarning().log("Ground supports: " + Arrays.stream(a_groundBFS).map(BlockFaceSupport::toString).reduce("", (a, b) -> a + ", " + b));
+        return false;
+    }
+
+    private static boolean matchBFSWithRBFS(BlockFaceSupport groundBFS, RequiredBlockFaceSupport coverRBFS, BlockType groundBlock, BlockType coverBlock) {
+        // Initially this was set to Bushes, but it also occurs e.g. for fences and possibly for more blocks.
+        if (!groundBFS.getFaceType().equals("Full")) {
+            LOGGER.atInfo().log("Ground block does not have FacceType = Full, skipping");
+            return false;
+        }
+
+        if (coverRBFS.getSupport() != RequiredBlockFaceSupport.Match.REQUIRED) {
+            LOGGER.atInfo().log("Cover block does not require support");
+            return true;
+        }
+
+        if (coverRBFS.getFaceType() != null && !coverRBFS.getFaceType().equals(groundBFS.getFaceType())) {
+            LOGGER.atInfo().log("Ground block does not support cover block (face type mismatch) " + groundBFS.getFaceType() + " != " + coverRBFS.getFaceType());
+            return false;
+        }
+
+        var coverRBFSTagId = coverRBFS.getTagId();
+        if (coverRBFSTagId != null) {
+            var coverRBFSTag = coverRBFSTagId.split("=");
+            var groundBlockTag = groundBlock.getData().getRawTags().get("Type")[0];
+            LOGGER.atInfo().log("Cover block has type tag [" + coverRBFSTag[0] + ":" + coverRBFSTag[1] + "]");
+            LOGGER.atInfo().log("Ground block has type tag [Type:" + groundBlockTag + "]");
+
+            if (coverRBFSTag[1].equals(groundBlockTag)) {
+                LOGGER.atInfo().log("Cover block supports ground block");
+                return true;
+            }
+
+            LOGGER.atInfo().log("Ground block does not support cover block! " + coverRBFSTag[1] + " != " + groundBlockTag);
+            return false;
+        }
+
+        if (coverBlock.getId().equals("Plant_Crop_Mushroom_Cap_Brown")) {return true;}
+        if (coverBlock.getId().contains("Rubble_")) {return true;}
+
+        LOGGER.atWarning().log("Uncaught case!");
+        LOGGER.atWarning().log("Ground block " + groundBlock.getId());
+        LOGGER.atWarning().log("Cover block " + coverBlock.getId());
+
+        return true;
+    }
+
 }
